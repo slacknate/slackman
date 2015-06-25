@@ -1,3 +1,4 @@
+import ssl
 import aiohttp
 import asyncio
 import argparse
@@ -6,18 +7,14 @@ from autobahn.asyncio.websocket import WebSocketClientProtocol, WebSocketClientF
 
 
 class MyClientProtocol(WebSocketClientProtocol):
-
     def onConnect(self, response):
         print("Server connected: {0}".format(response.peer))
 
     def onOpen(self):
         print("WebSocket connection open.")
 
-    def onMessage(self, payload, isBinary):
-        if isBinary:
-            print("Binary message received: {0} bytes".format(len(payload)))
-        else:
-            print("Text message received: {0}".format(payload.decode('utf8')))
+    def onMessage(self, payload, _):
+        print("Text message received: {0}".format(payload.decode('utf8')))
 
     def onClose(self, wasClean, code, reason):
         print("WebSocket connection closed: {0}".format(reason))
@@ -41,7 +38,7 @@ def main_loop(loop, token):
     factory = WebSocketClientFactory(ws_url)
     factory.protocol = MyClientProtocol
 
-    conn = yield from loop.create_connection(factory, ws_url)
+    conn = yield from loop.create_connection(factory, ws_url, ssl=ssl.SSLContext(ssl.PROTOCOL_TLSv1_2))
     print(conn)
 
 
