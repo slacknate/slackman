@@ -50,7 +50,7 @@ def main():
     parser.add_argument("--token", dest="token", required=True,
                         help="Authentication token of the slack bot integration that will be connecting.")
 
-    args, _, = parser.parse_known_args()
+    args, _ = parser.parse_known_args()
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main_loop(loop, args.token))
