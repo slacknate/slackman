@@ -1,23 +1,15 @@
-import ssl
+import json
 import aiohttp
 import asyncio
 import argparse
+import websockets
 
-from autobahn.asyncio.websocket import WebSocketClientProtocol, WebSocketClientFactory
 
-
-class MyClientProtocol(WebSocketClientProtocol):
-    def onConnect(self, response):
-        print("Server connected: {0}".format(response.peer))
-
-    def onOpen(self):
-        print("WebSocket connection open.")
-
-    def onMessage(self, payload, _):
-        print("Text message received: {0}".format(payload.decode('utf8')))
-
-    def onClose(self, wasClean, code, reason):
-        print("WebSocket connection closed: {0}".format(reason))
+class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
+    @asyncio.coroutine
+    def recv(self):
+        result = yield from super().recv()
+        return json.loads(result)
 
 
 @asyncio.coroutine
@@ -28,18 +20,22 @@ def start_slack_rtm_session(token):
     if not resp_data["ok"]:
         raise ValueError("Unable to retrieve Websocket URL for Slack RTM session.")
 
-    return resp_data["url"]
+    connection = yield from websockets.connect(resp_data["url"], klass=SlackClientProtocol)
+
+    hello_message = yield from connection.recv()
+    if hello_message.get("type") != "hello":
+        raise ValueError("Did not receive hello message from Slack.")
+
+    return connection
 
 
 @asyncio.coroutine
-def main_loop(loop, token):
-    ws_url = yield from start_slack_rtm_session(token)
+def main_loop(token):
+    connection = yield from start_slack_rtm_session(token)
 
-    factory = WebSocketClientFactory(ws_url)
-    factory.protocol = MyClientProtocol
 
-    conn = yield from loop.create_connection(factory, ws_url, ssl=ssl.SSLContext(ssl.PROTOCOL_TLSv1_2))
-    print(conn)
+
+    yield from connection.close()
 
 
 def main():
@@ -50,7 +46,7 @@ def main():
     args, _ = parser.parse_known_args()
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main_loop(loop, args.token))
+    loop.run_until_complete(main_loop(args.token))
 
 
 if __name__ == "__main__":
