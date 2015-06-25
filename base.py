@@ -24,6 +24,7 @@ def start_slack_rtm_session(token):
 
     hello_message = yield from connection.recv()
     if hello_message.get("type") != "hello":
+        yield from connection.close()
         raise ValueError("Did not receive hello message from Slack.")
 
     return connection
@@ -33,9 +34,11 @@ def start_slack_rtm_session(token):
 def main_loop(token):
     connection = yield from start_slack_rtm_session(token)
 
+    try:
+        pass
 
-
-    yield from connection.close()
+    finally:
+        yield from connection.close()
 
 
 def main():
