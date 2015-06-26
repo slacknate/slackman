@@ -16,25 +16,6 @@ class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
 
 
 @asyncio.coroutine
-def start_slack_rtm_session(token):
-    response = yield from aiohttp.request("post", "https://slack.com/api/rtm.start", data={"token": token})
-    resp_data = yield from response.json()
-
-    if not resp_data["ok"]:
-        raise ValueError("Unable to retrieve Websocket URL for Slack RTM session.")
-
-    connection = yield from websockets.connect(resp_data["url"], klass=SlackClientProtocol)
-
-    hello_event = yield from connection.recv()
-    if hello_event.get("type") != "hello":
-        yield from connection.close()
-
-        raise ValueError("Did not receive hello message from Slack.")
-
-    return connection
-
-
-@asyncio.coroutine
 def handle_events(queue):
     while True:
         event = yield from queue.get()
@@ -54,10 +35,50 @@ def event_thread(queue):
 
 
 @asyncio.coroutine
-def main_loop(loop, queue, token):
+def get_admin_user_ids(emails, token):
+    response = yield from aiohttp.request("post", "https://slack.com/api/users.list", data={"token": token})
+    resp_data = yield from response.json()
+
+    if not resp_data["ok"]:
+        raise ValueError("Unable to retrieve Slack user list.")
+
+    members = resp_data["members"]
+
+    admin_uid_table = {}
+    for user_data in members:
+        user_email = user_data["profile"].get("email")
+
+        if user_email in emails:
+            admin_uid_table[user_email] = user_data["id"]
+
+    return admin_uid_table
+
+
+@asyncio.coroutine
+def start_slack_rtm_session(token):
+    response = yield from aiohttp.request("post", "https://slack.com/api/rtm.start", data={"token": token})
+    resp_data = yield from response.json()
+
+    if not resp_data["ok"]:
+        raise ValueError("Unable to retrieve Websocket URL for Slack RTM session.")
+
+    connection = yield from websockets.connect(resp_data["url"], klass=SlackClientProtocol)
+
+    hello_event = yield from connection.recv()
+    if hello_event.get("type") != "hello":
+        yield from connection.close()
+
+        raise ValueError("Did not receive hello message from Slack.")
+
+    return connection
+
+
+@asyncio.coroutine
+def main_loop(loop, queue, args):
     executor = ThreadPoolExecutor(max_workers=1)
 
-    connection = yield from start_slack_rtm_session(token)
+    admin_uid_table = yield from get_admin_user_ids(args.admins, args.token)
+    connection = yield from start_slack_rtm_session(args.token)
 
     try:
         loop.run_in_executor(executor, event_thread, queue)
@@ -77,6 +98,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", dest="token", required=True,
                         help="Authentication token of the slack bot integration that will be connecting.")
+    parser.add_argument("--admins", dest="admins", nargs="+", required=True,
+                        help="List of space delimited email addresses for Slack users to be treated as admins")
 
     args, _ = parser.parse_known_args()
 
@@ -84,7 +107,7 @@ def main():
 
     queue = asyncio.Queue()
 
-    loop.run_until_complete(main_loop(loop, queue, args.token))
+    loop.run_until_complete(main_loop(loop, queue, args))
 
 
 if __name__ == "__main__":
