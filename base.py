@@ -1,11 +1,25 @@
 import json
 import asyncio
+import logging
 import argparse
 
 from concurrent.futures import ThreadPoolExecutor
 
 import aiohttp
 import websockets
+
+logger = logging.getLogger("Slack Client")
+
+ADMIN_COMMANDS = [
+
+    "$auth",
+    "$power",
+]
+
+USER_COMMANDS = [
+
+    "$gameinfo",
+]
 
 
 class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
@@ -16,22 +30,43 @@ class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
 
 
 @asyncio.coroutine
-def handle_events(queue):
-    while True:
-        event = yield from queue.get()
-        event_type = event.get("type")
+def handle_events(admin_uid_table, queue):
+    try:
+        while True:
+            event = yield from queue.get()
+            event_type = event.get("type")
 
-        if event_type == "shutdown":
-            break
+            if event_type == "shutdown":
+                break
 
-        print(event)
+            elif event_type == "message":
+                text_groups = [group for group in event["text"].split(" ") if group != ""]
 
-        # TODO: implement me!
+                command = text_groups[0]
+                args = text_groups[1:]
+
+                uid = event["user"]
+
+                if command in ADMIN_COMMANDS:
+                    if uid in admin_uid_table:
+                        pass
+
+                    else:
+                        print("You are not authorized to use this command.")
+
+                elif command in USER_COMMANDS:
+                    pass
+
+                else:
+                    print("Unknown command {}".format(command))
+
+    except Exception:
+        logger.exception("Error occurred")
 
 
-def event_thread(queue):
+def event_thread(admin_uid_table, queue):
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(handle_events(queue))
+    loop.run_until_complete(handle_events(admin_uid_table, queue))
 
 
 @asyncio.coroutine
@@ -49,7 +84,7 @@ def get_admin_user_ids(emails, token):
         user_email = user_data["profile"].get("email")
 
         if user_email in emails:
-            admin_uid_table[user_email] = user_data["id"]
+            admin_uid_table[user_data["id"]] = user_email
 
     return admin_uid_table
 
@@ -81,7 +116,7 @@ def main_loop(loop, queue, args):
     connection = yield from start_slack_rtm_session(args.token)
 
     try:
-        loop.run_in_executor(executor, event_thread, queue)
+        loop.run_in_executor(executor, event_thread, admin_uid_table, queue)
 
         while True:
             event = yield from connection.recv()
@@ -99,7 +134,7 @@ def main():
     parser.add_argument("--token", dest="token", required=True,
                         help="Authentication token of the slack bot integration that will be connecting.")
     parser.add_argument("--admins", dest="admins", nargs="+", required=True,
-                        help="List of space delimited email addresses for Slack users to be treated as admins")
+                        help="List of space delimited email addresses for Slack users to be treated as admins.")
 
     args, _ = parser.parse_known_args()
 
