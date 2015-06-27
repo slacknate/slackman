@@ -1,3 +1,9 @@
+__all__ = [
+
+    "start_slack_rtm_session",
+    "get_user_ids",
+]
+
 import asyncio
 
 import aiohttp
