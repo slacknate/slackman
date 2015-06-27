@@ -73,7 +73,7 @@ def handle_events(admin_uid_table, queue, token):
                     if uid in admin_uid_table:
                         handler = COMMAND_HANDLERS.get(command)
                         if handler is not None:
-                            yield from handler(connection, event["channel"], *args)
+                            yield from handler(connection, event, *args)
 
                         else:
                             logger.debug("No handler registered for command %s", command)
@@ -90,7 +90,7 @@ def handle_events(admin_uid_table, queue, token):
                 elif command in USER_COMMANDS:
                     handler = COMMAND_HANDLERS.get(command)
                     if handler is not None:
-                        yield from handler(connection, event["channel"], *args)
+                        yield from handler(connection, event, *args)
 
                     else:
                         logger.debug("No handler registered for command %s", command)
