@@ -37,6 +37,9 @@ class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
 
 
 def register_handler(command, handler):
+    if not asyncio.iscoroutinefunction(handler):
+        raise ValueError("Command handlers must be coroutines.")
+
     COMMAND_HANDLERS[command] = handler
 
 
