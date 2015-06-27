@@ -38,7 +38,7 @@ class SlackServerManager(object):
                 event = yield from connection.recv()
                 event_type = event.get("type")
 
-                logger.debug("Event: %s", event)
+                logger.debug("Received event: %s", event)
 
                 if event_type == "shutdown":
                     break
@@ -109,6 +109,9 @@ class SlackServerManager(object):
 
             while True:
                 event = yield from queue.get()
+
+                logger.debug("Sending event: %s", event)
+
                 yield from connection.send(event)
 
         except Exception:
