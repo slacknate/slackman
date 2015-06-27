@@ -1,6 +1,7 @@
 import smtplib
 
 from random import SystemRandom
+from email.message import Message
 
 AUTH_EMAIL = """
 Hello Cathedral user,
@@ -19,12 +20,14 @@ def generate_auth_token():
 
 
 def send_auth_email(destination, username, password):
-    msg = AUTH_EMAIL.format(auth_token=generate_auth_token())
+    msg = Message()
+    msg.add_header("subject", "Cathedral Admin Access")
+    msg.set_payload(AUTH_EMAIL.format(auth_token=generate_auth_token()))
 
     server = smtplib.SMTP("smtp.gmail.com:587")
     server.starttls()
 
     server.login(username, password)
-    server.sendmail(username, destination, msg)
+    server.sendmail(username, destination, msg.as_string())
 
     server.quit()
