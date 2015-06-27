@@ -130,7 +130,7 @@ class SlackServerManager(object):
         except Exception:
             logger.exception("Error occurred")
 
-    def send_event(self, event):
+    def send(self, event):
         self.loop.call_soon_threadsafe(lambda: asyncio.async(self.send_queue.put(event)))
 
     @asyncio.coroutine
