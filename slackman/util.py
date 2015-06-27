@@ -1,7 +1,8 @@
 __all__ = [
 
-    "start_slack_rtm_session",
     "get_user_ids",
+    "get_user_email",
+    "start_slack_rtm_session",
 ]
 
 import asyncio
@@ -49,3 +50,20 @@ def get_user_ids(emails, token):
             uid_table[user_data["id"]] = user_email
 
     return uid_table
+
+
+@asyncio.coroutine
+def get_user_email(uid, token):
+    response = yield from aiohttp.request("post", "https://slack.com/api/users.list", data={"token": token})
+    resp_data = yield from response.json()
+
+    if not resp_data["ok"]:
+        raise ValueError("Unable to retrieve Slack user list.")
+
+    members = resp_data["members"]
+
+    for user_data in members:
+        if uid == user_data["id"]:
+            return user_data["profile"].get("email")
+
+    raise ValueError("Unable to find email for user ID {uid}".format(uid=uid))
