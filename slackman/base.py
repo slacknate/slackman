@@ -81,7 +81,17 @@ class SlackServerManager(object):
                     uid = event["user"]
 
                     if command == "$auth":
-                        yield from self.auth_handler(event, token)
+                        if uid in admin_uid_table:
+                            yield from self.auth_handler(event, token)
+
+                        else:
+                            yield from connection.send({
+
+                                "id": 1,
+                                "type": "message",
+                                "channel": event["channel"],
+                                "text": "You are not authorized to use this command."
+                            })
 
                     elif command in self.admin_commands:
                         if uid in admin_uid_table:
