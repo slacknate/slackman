@@ -9,7 +9,8 @@ logger = logging.getLogger("Slack Client")
 
 
 class SlackServerManager(object):
-    def __init__(self):
+    def __init__(self, args):
+        self.args = args
         self.loop = asyncio.get_event_loop()
 
         self.command_handlers = {}
@@ -127,15 +128,15 @@ class SlackServerManager(object):
         self.loop.call_soon_threadsafe(lambda: asyncio.async(self.send_queue.put(event)))
 
     @asyncio.coroutine
-    def run(self, args):
+    def run(self):
         executor = ThreadPoolExecutor(max_workers=1)
 
-        admin_uid_table = yield from get_user_ids(args.admins, args.token)
-        connection = yield from start_slack_rtm_session(args.token)
+        admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
+        connection = yield from start_slack_rtm_session(self.args.token)
 
         try:
-            self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, args.token)
-            self.loop.run_in_executor(executor, self.send_thread, admin_uid_table, args.token)
+            self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, self.args.token)
+            self.loop.run_in_executor(executor, self.send_thread, admin_uid_table, self.args.token)
 
             while True:
                 pass
