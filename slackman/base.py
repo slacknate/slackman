@@ -36,6 +36,14 @@ class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
         return json.loads(result)
 
 
+def register_handler(command, handler):
+    COMMAND_HANDLERS[command] = handler
+
+
+def unregister_handler(command):
+    del COMMAND_HANDLERS[command]
+
+
 @asyncio.coroutine
 def handle_events(admin_uid_table, queue, token):
     try:
