@@ -144,9 +144,6 @@ class SlackServerManager(object):
                 self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, self.args.token)
                 self.loop.run_in_executor(executor, self.send_thread, admin_uid_table, self.args.token)
 
-            while True:
-                pass
-
         finally:
             yield from connection.close()
 
