@@ -1,181 +1,147 @@
-import json
 import asyncio
 import logging
 
 from concurrent.futures import ThreadPoolExecutor
 
-import aiohttp
-import websockets
+from .util import *
 
 logger = logging.getLogger("Slack Client")
 
-ADMIN_COMMANDS = [
 
-    "$auth",
-    "$power",
-]
+class SlackServerManager(object):
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
 
-USER_COMMANDS = [
+        self.command_handlers = {}
+        self.admin_commands = ("$auth", "$power")
+        self.user_commands = ("$gameinfo",)
 
-    "$gameinfo",
-]
+        self.send_queue = asyncio.Queue()
+        self.receive_queue = asyncio.Queue()
 
-COMMAND_HANDLERS = {}
+    def register_handler(self, command, handler):
+        if not asyncio.iscoroutinefunction(handler):
+            raise ValueError("Command handlers must be coroutines.")
 
+        self.command_handlers[command] = handler
 
-class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
+    def unregister_handler(self, command):
+        del self.command_handlers[command]
+
     @asyncio.coroutine
-    def send(self, data):
-        result = yield from super().send(json.dumps(data))
-        return result
+    def receive_events(self, admin_uid_table, queue, token):
+        try:
+            connection = yield from start_slack_rtm_session(token)
 
-    @asyncio.coroutine
-    def recv(self):
-        result = yield from super().recv()
-        return json.loads(result)
+            while True:
+                event = yield from connection.recv()
+                event_type = event.get("type")
 
+                logger.debug("Event: %s", event)
 
-def register_handler(command, handler):
-    if not asyncio.iscoroutinefunction(handler):
-        raise ValueError("Command handlers must be coroutines.")
+                if event_type == "shutdown":
+                    break
 
-    COMMAND_HANDLERS[command] = handler
+                elif event_type == "message":
+                    text_groups = [group for group in event["text"].split(" ") if group != ""]
 
+                    command = text_groups[0]
+                    args = text_groups[1:]
 
-def unregister_handler(command):
-    del COMMAND_HANDLERS[command]
+                    uid = event["user"]
 
+                    if command in self.admin_commands:
+                        if uid in admin_uid_table:
+                            handler = self.command_handlers.get(command)
+                            if handler is not None:
+                                yield from handler(event, token, *args)
 
-@asyncio.coroutine
-def handle_events(admin_uid_table, queue, token):
-    try:
-        connection = yield from start_slack_rtm_session(token)
+                            else:
+                                logger.debug("No handler registered for command %s", command)
 
-        while True:
-            event = yield from queue.get()
-            event_type = event.get("type")
+                        else:
+                            yield from connection.send({
 
-            logger.debug("Event: %s", event)
+                                "id": 1,
+                                "type": "message",
+                                "channel": event["channel"],
+                                "text": "You are not authorized to use this command."
+                            })
 
-            if event_type == "shutdown":
-                break
-
-            elif event_type == "message":
-                text_groups = [group for group in event["text"].split(" ") if group != ""]
-
-                command = text_groups[0]
-                args = text_groups[1:]
-
-                uid = event["user"]
-
-                if command in ADMIN_COMMANDS:
-                    if uid in admin_uid_table:
-                        handler = COMMAND_HANDLERS.get(command)
+                    elif command in self.user_commands:
+                        handler = self.command_handlers.get(command)
                         if handler is not None:
-                            yield from handler(connection, event, token, *args)
+                            yield from handler(event, token, *args)
 
                         else:
                             logger.debug("No handler registered for command %s", command)
 
-                    else:
+                    elif command.startswith("$"):
+                        logger.debug("Unknown command %s", command)
+
                         yield from connection.send({
 
                             "id": 1,
                             "type": "message",
                             "channel": event["channel"],
-                            "text": "You are not authorized to use this command."
+                            "text": "Unknown command {}".format(command)
                         })
 
-                elif command in USER_COMMANDS:
-                    handler = COMMAND_HANDLERS.get(command)
-                    if handler is not None:
-                        yield from handler(connection, event, token, *args)
+        except Exception:
+            logger.exception("Error occurred")
 
-                    else:
-                        logger.debug("No handler registered for command %s", command)
+    def receive_thread(self, admin_uid_table, token):
+        try:
 
-                elif command.startswith("$"):
-                    logger.debug("Unknown command %s", command)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-                    yield from connection.send({
+            loop.run_until_complete(self.receive_events(admin_uid_table, self.receive_queue, token))
 
-                        "id": 1,
-                        "type": "message",
-                        "channel": event["channel"],
-                        "text": "Unknown command {}".format(command)
-                    })
+        except Exception:
+            logger.exception("Error occurred")
 
-    except Exception:
-        logger.exception("Error occurred")
+    @asyncio.coroutine
+    def send_events(self, queue, token):
+        try:
+            connection = yield from start_slack_rtm_session(token)
 
+            while True:
+                event = yield from queue.get()
+                yield from connection.send(event)
 
-def event_thread(admin_uid_table, queue, token):
-    try:
+        except Exception:
+            logger.exception("Error occurred")
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    def send_thread(self, admin_uid_table, token):
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        loop.run_until_complete(handle_events(admin_uid_table, queue, token))
+            loop.run_until_complete(self.send_events(self.send_queue, token))
 
-    except Exception:
-        logger.exception("Error occurred")
+        except Exception:
+            logger.exception("Error occurred")
 
+    def send_event(self, event):
+        self.loop.call_soon_threadsafe(lambda: asyncio.async(self.send_queue.put(event)))
 
-@asyncio.coroutine
-def get_admin_user_ids(emails, token):
-    response = yield from aiohttp.request("post", "https://slack.com/api/users.list", data={"token": token})
-    resp_data = yield from response.json()
+    @asyncio.coroutine
+    def run(self, args):
+        executor = ThreadPoolExecutor(max_workers=1)
 
-    if not resp_data["ok"]:
-        raise ValueError("Unable to retrieve Slack user list.")
+        admin_uid_table = yield from get_user_ids(args.admins, args.token)
+        connection = yield from start_slack_rtm_session(args.token)
 
-    members = resp_data["members"]
+        try:
+            self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, args.token)
+            self.loop.run_in_executor(executor, self.send_thread, admin_uid_table, args.token)
 
-    admin_uid_table = {}
-    for user_data in members:
-        user_email = user_data["profile"].get("email")
+            while True:
+                pass
 
-        if user_email in emails:
-            admin_uid_table[user_data["id"]] = user_email
+        finally:
+            yield from connection.close()
 
-    return admin_uid_table
-
-
-@asyncio.coroutine
-def start_slack_rtm_session(token):
-    response = yield from aiohttp.request("post", "https://slack.com/api/rtm.start", data={"token": token})
-    resp_data = yield from response.json()
-
-    if not resp_data["ok"]:
-        raise ValueError("Unable to retrieve Websocket URL for Slack RTM session.")
-
-    connection = yield from websockets.connect(resp_data["url"], klass=SlackClientProtocol)
-
-    hello_event = yield from connection.recv()
-    if hello_event.get("type") != "hello":
-        yield from connection.close()
-
-        raise ValueError("Did not receive hello message from Slack.")
-
-    return connection
-
-
-@asyncio.coroutine
-def main_loop(loop, queue, args):
-    executor = ThreadPoolExecutor(max_workers=1)
-
-    admin_uid_table = yield from get_admin_user_ids(args.admins, args.token)
-    connection = yield from start_slack_rtm_session(args.token)
-
-    try:
-        loop.run_in_executor(executor, event_thread, admin_uid_table, queue, args.token)
-
-        while True:
-            event = yield from connection.recv()
-            loop.call_soon_threadsafe(lambda: asyncio.async(queue.put(event)))
-
-    finally:
-        yield from connection.close()
-
-        loop.call_soon_threadsafe(lambda: asyncio.async(queue.put({"type": "shutdown"})))
-        executor.shutdown(wait=True)
+            self.loop.call_soon_threadsafe(lambda: asyncio.async(self.receive_queue.put({"type": "shutdown"})))
+            executor.shutdown(wait=True)
