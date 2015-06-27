@@ -21,8 +21,15 @@ USER_COMMANDS = [
     "$gameinfo",
 ]
 
+COMMAND_HANDLERS = {}
+
 
 class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
+    @asyncio.coroutine
+    def send(self, data):
+        result = yield from super().send(json.dumps(data))
+        return result
+
     @asyncio.coroutine
     def recv(self):
         result = yield from super().recv()
@@ -30,11 +37,15 @@ class SlackClientProtocol(websockets.client.WebSocketClientProtocol):
 
 
 @asyncio.coroutine
-def handle_events(admin_uid_table, queue):
+def handle_events(admin_uid_table, queue, token):
     try:
+        connection = yield from start_slack_rtm_session(token)
+
         while True:
             event = yield from queue.get()
             event_type = event.get("type")
+
+            logger.debug("Event: %s", event)
 
             if event_type == "shutdown":
                 break
@@ -52,21 +63,42 @@ def handle_events(admin_uid_table, queue):
                         pass
 
                     else:
-                        print("You are not authorized to use this command.")
+                        yield from connection.send({
+
+                            "id": 1,
+                            "type": "message",
+                            "channel": event["channel"],
+                            "text": "You are not authorized to use this command."
+                        })
 
                 elif command in USER_COMMANDS:
                     pass
 
-                else:
-                    print("Unknown command {}".format(command))
+                elif command.startswith("$"):
+                    logger.debug("Unknown command %s", command)
+
+                    yield from connection.send({
+
+                        "id": 1,
+                        "type": "message",
+                        "channel": event["channel"],
+                        "text": "Unknown command {}".format(command)
+                    })
 
     except Exception:
         logger.exception("Error occurred")
 
 
-def event_thread(admin_uid_table, queue):
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(handle_events(admin_uid_table, queue))
+def event_thread(admin_uid_table, queue, token):
+    try:
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        loop.run_until_complete(handle_events(admin_uid_table, queue, token))
+
+    except Exception:
+        logger.exception("Error occurred")
 
 
 @asyncio.coroutine
@@ -116,7 +148,7 @@ def main_loop(loop, queue, args):
     connection = yield from start_slack_rtm_session(args.token)
 
     try:
-        loop.run_in_executor(executor, event_thread, admin_uid_table, queue)
+        loop.run_in_executor(executor, event_thread, admin_uid_table, queue, args.token)
 
         while True:
             event = yield from connection.recv()
@@ -135,13 +167,13 @@ def main():
                         help="Authentication token of the slack bot integration that will be connecting.")
     parser.add_argument("--admins", dest="admins", nargs="+", required=True,
                         help="List of space delimited email addresses for Slack users to be treated as admins.")
-
+    parser.add_argument("--log-level", dest="log_level", default="DEBUG", help="Sets the log level.")
     args, _ = parser.parse_known_args()
 
-    loop = asyncio.get_event_loop()
+    logging.basicConfig(level=args.log_level)
 
     queue = asyncio.Queue()
-
+    loop = asyncio.get_event_loop()
     loop.run_until_complete(main_loop(loop, queue, args))
 
 
