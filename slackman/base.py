@@ -4,6 +4,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from .util import *
+from .auth import send_auth_email
 
 logger = logging.getLogger("Slack Client")
 
@@ -14,10 +15,24 @@ class SlackServerManager(object):
         self.loop = asyncio.get_event_loop()
 
         self.command_handlers = {}
-        self.admin_commands = ("$auth", "$power")
-        self.user_commands = ("$gameinfo",)
+        self.admin_commands = []
+        self.user_commands = []
 
         self.send_queue = asyncio.Queue()
+
+    def register_admin_commands(self, *commands):
+        self.admin_commands += commands
+
+    def unregister_admin_commands(self, *commands):
+        for command in commands:
+            self.admin_commands.remove(command)
+
+    def register_user_commands(self, *commands):
+        self.user_commands += commands
+
+    def unregister_user_commands(self, *commands):
+        for command in commands:
+            self.user_commands.remove(command)
 
     def register_handler(self, command, handler):
         if not asyncio.iscoroutinefunction(handler):
@@ -27,6 +42,20 @@ class SlackServerManager(object):
 
     def unregister_handler(self, command):
         del self.command_handlers[command]
+
+    @asyncio.coroutine
+    def auth_handler(self, event, token):
+        yield from self.send({
+
+            "id": 1,
+            "type": "message",
+            "channel": event["channel"],
+            "text": "Sending authorization token to your email address. Please send the token as your next message."
+        })
+
+        email = yield from get_user_email(event["user"], token)
+
+        send_auth_email(email, *self.args.email_info)
 
     @asyncio.coroutine
     def receive_events(self, admins, token):
@@ -51,7 +80,10 @@ class SlackServerManager(object):
 
                     uid = event["user"]
 
-                    if command in self.admin_commands:
+                    if command == "$auth":
+                        yield from self.auth_handler(event, token)
+
+                    elif command in self.admin_commands:
                         if uid in admin_uid_table:
                             handler = self.command_handlers.get(command)
                             if handler is not None:
@@ -102,46 +134,21 @@ class SlackServerManager(object):
             logger.exception("Error occurred")
 
     @asyncio.coroutine
-    def send_events(self, queue, token):
-        try:
-            connection = yield from start_slack_rtm_session(token)
-
-            while True:
-                event = yield from queue.get()
-                event_type = event.get("type")
-
-                logger.debug("Sending event: %s", event)
-
-                if event_type == "shutdown":
-                    break
-
-                yield from connection.send(event)
-
-        except Exception:
-            logger.exception("Error occurred")
-
-    def send_thread(self, token):
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            loop.run_until_complete(self.send_events(self.send_queue, token))
-
-        except Exception:
-            logger.exception("Error occurred")
-
     def send(self, event):
-        self.loop.call_soon_threadsafe(lambda: asyncio.async(self.send_queue.put(event)))
+        # FIXME: this seems spammy and bad...
+        connection = yield from start_slack_rtm_session(self.args.token)
+
+        yield from connection.send(event)
+        yield from connection.close()
 
     @asyncio.coroutine
     def run(self):
         try:
-            executor = ThreadPoolExecutor(max_workers=2)
+            executor = ThreadPoolExecutor(max_workers=1)
 
             recv_future = self.loop.run_in_executor(executor, self.receive_thread, self.args.admins, self.args.token)
-            send_future = self.loop.run_in_executor(executor, self.send_thread, self.args.token)
 
-            yield from asyncio.wait([recv_future, send_future])
+            yield from asyncio.wait([recv_future])
 
         except Exception:
             logger.exception("Error occurred")
