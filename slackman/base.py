@@ -71,7 +71,12 @@ def handle_events(admin_uid_table, queue, token):
 
                 if command in ADMIN_COMMANDS:
                     if uid in admin_uid_table:
-                        pass
+                        handler = COMMAND_HANDLERS.get(command)
+                        if handler is not None:
+                            yield from handler(connection, *args)
+
+                        else:
+                            logger.debug("No handler registered for command %s", command)
 
                     else:
                         yield from connection.send({
@@ -83,7 +88,12 @@ def handle_events(admin_uid_table, queue, token):
                         })
 
                 elif command in USER_COMMANDS:
-                    pass
+                    handler = COMMAND_HANDLERS.get(command)
+                    if handler is not None:
+                        yield from handler(connection, *args)
+
+                    else:
+                        logger.debug("No handler registered for command %s", command)
 
                 elif command.startswith("$"):
                     logger.debug("Unknown command %s", command)
