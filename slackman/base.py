@@ -18,7 +18,6 @@ class SlackServerManager(object):
         self.user_commands = ("$gameinfo",)
 
         self.send_queue = asyncio.Queue()
-        self.receive_queue = asyncio.Queue()
 
     def register_handler(self, command, handler):
         if not asyncio.iscoroutinefunction(handler):
@@ -30,9 +29,10 @@ class SlackServerManager(object):
         del self.command_handlers[command]
 
     @asyncio.coroutine
-    def receive_events(self, admin_uid_table, queue, token):
+    def receive_events(self, admins, token):
         try:
             connection = yield from start_slack_rtm_session(token)
+            admin_uid_table = yield from get_user_ids(admins, token)
 
             while True:
                 event = yield from connection.recv()
@@ -91,13 +91,12 @@ class SlackServerManager(object):
         except Exception:
             logger.exception("Error occurred")
 
-    def receive_thread(self, admin_uid_table, token):
+    def receive_thread(self, admins, token):
         try:
-
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            loop.run_until_complete(self.receive_events(admin_uid_table, self.receive_queue, token))
+            loop.run_until_complete(self.receive_events(admins, token))
 
         except Exception:
             logger.exception("Error occurred")
@@ -105,7 +104,6 @@ class SlackServerManager(object):
     @asyncio.coroutine
     def send_events(self, queue, token):
         try:
-            print("do we eveen get here")
             connection = yield from start_slack_rtm_session(token)
 
             while True:
@@ -137,16 +135,16 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def run(self):
-        admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
-        connection = yield from start_slack_rtm_session(self.args.token)
-
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, self.args.token)
-                self.loop.run_in_executor(executor, self.send_thread, self.args.token)
+            executor = ThreadPoolExecutor(max_workers=2)
+
+            recv_future = self.loop.run_in_executor(executor, self.receive_thread, self.args.admins, self.args.token)
+            send_future = self.loop.run_in_executor(executor, self.send_thread, self.args.token)
+
+            yield from asyncio.wait([recv_future, send_future])
+
+        except Exception:
+            logger.exception("Error occurred")
 
         finally:
-            yield from connection.close()
-
-            self.loop.call_soon_threadsafe(lambda: asyncio.async(self.receive_queue.put({"type": "shutdown"})))
             self.loop.call_soon_threadsafe(lambda: asyncio.async(self.send_queue.put({"type": "shutdown"})))
