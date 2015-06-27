@@ -41,11 +41,11 @@ def get_user_ids(emails, token):
 
     members = resp_data["members"]
 
-    admin_uid_table = {}
+    uid_table = {}
     for user_data in members:
         user_email = user_data["profile"].get("email")
 
         if user_email in emails:
-            admin_uid_table[user_data["id"]] = user_email
+            uid_table[user_data["id"]] = user_email
 
-    return admin_uid_table
+    return uid_table
