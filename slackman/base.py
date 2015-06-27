@@ -180,23 +180,3 @@ def main_loop(loop, queue, args):
 
         loop.call_soon_threadsafe(lambda: asyncio.async(queue.put({"type": "shutdown"})))
         executor.shutdown(wait=True)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--token", dest="token", required=True,
-                        help="Authentication token of the slack bot integration that will be connecting.")
-    parser.add_argument("--admins", dest="admins", nargs="+", required=True,
-                        help="List of space delimited email addresses for Slack users to be treated as admins.")
-    parser.add_argument("--log-level", dest="log_level", default="DEBUG", help="Sets the log level.")
-    args, _ = parser.parse_known_args()
-
-    logging.basicConfig(level=args.log_level)
-
-    queue = asyncio.Queue()
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main_loop(loop, queue, args))
-
-
-if __name__ == "__main__":
-    main()
