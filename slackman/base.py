@@ -109,8 +109,12 @@ class SlackServerManager(object):
 
             while True:
                 event = yield from queue.get()
+                event_type = event.get("type")
 
                 logger.debug("Sending event: %s", event)
+
+                if event_type == "shutdown":
+                    break
 
                 yield from connection.send(event)
 
@@ -132,14 +136,13 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def run(self):
-        executor = ThreadPoolExecutor(max_workers=1)
-
         admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
         connection = yield from start_slack_rtm_session(self.args.token)
 
         try:
-            self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, self.args.token)
-            self.loop.run_in_executor(executor, self.send_thread, admin_uid_table, self.args.token)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                self.loop.run_in_executor(executor, self.receive_thread, admin_uid_table, self.args.token)
+                self.loop.run_in_executor(executor, self.send_thread, admin_uid_table, self.args.token)
 
             while True:
                 pass
@@ -148,4 +151,4 @@ class SlackServerManager(object):
             yield from connection.close()
 
             self.loop.call_soon_threadsafe(lambda: asyncio.async(self.receive_queue.put({"type": "shutdown"})))
-            executor.shutdown(wait=True)
+            self.loop.call_soon_threadsafe(lambda: asyncio.async(self.send_queue.put({"type": "shutdown"})))
