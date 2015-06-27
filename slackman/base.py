@@ -1,7 +1,6 @@
 import json
 import asyncio
 import logging
-import argparse
 
 from concurrent.futures import ThreadPoolExecutor
 
