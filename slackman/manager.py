@@ -52,8 +52,6 @@ class SlackServerManager(object):
     def auth_handler(self, event):
         yield from self.send({
 
-            "id": 1,
-            "type": "message",
             "channel": event["channel"],
             "text": "Sending authorization token to your email address. Please send the token as your next message."
         })
@@ -77,8 +75,6 @@ class SlackServerManager(object):
 
             yield from self.send({
 
-                "id": 1,
-                "type": "message",
                 "channel": event["channel"],
                 "text": "Authorization succeeded."
             })
@@ -88,8 +84,6 @@ class SlackServerManager(object):
 
             yield from self.send({
 
-                "id": 1,
-                "type": "message",
                 "channel": event["channel"],
                 "text": "Authorization failed."
             })
@@ -102,8 +96,6 @@ class SlackServerManager(object):
 
         yield from self.send({
 
-            "id": 1,
-            "type": "message",
             "channel": event["channel"],
             "text": "Deauthorization complete."
         })
@@ -114,8 +106,6 @@ class SlackServerManager(object):
 
         yield from self.send({
 
-            "id": 1,
-            "type": "message",
             "channel": channel,
             "text": "You are not permitted to use this command."
         })
@@ -127,8 +117,6 @@ class SlackServerManager(object):
 
         yield from self.send({
 
-            "id": 1,
-            "type": "message",
             "channel": channel,
             "text": "You are not authorized to use this command."
         })
@@ -139,8 +127,6 @@ class SlackServerManager(object):
 
         yield from self.send({
 
-            "id": 1,
-            "type": "message",
             "channel": channel,
             "text": "Unknown command {}".format(command)
         })
@@ -194,7 +180,7 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def send(self, event):
-        yield from self.send_connection.send(event)
+        yield from self.send_connection.send(event.update({"id": 1, "type": "message"}))
 
     @asyncio.coroutine
     def receive_events(self, queue):
