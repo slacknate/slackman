@@ -71,6 +71,8 @@ class SlackServerManager(object):
         response_event = yield from future
 
         if response_event["text"] == auth_token:
+            logger.debug("Authorizing %s succeeded.", event["user"])
+
             self.auth_state_table[event["user"]] = True
 
             yield from self.send({
@@ -82,6 +84,8 @@ class SlackServerManager(object):
             })
 
         else:
+            logger.debug("Authorizing %s failed.", event["user"])
+
             yield from self.send({
 
                 "id": 1,
@@ -92,6 +96,8 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def deauth_handler(self, event):
+        logger.debug("Deauthorizing %s.", event["user"])
+
         self.auth_state_table[event["user"]] = False
 
         yield from self.send({
@@ -104,6 +110,8 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def not_permitted(self, channel):
+        logger.debug("Non admin in channel %s attempted to use an admin command.", channel)
+
         yield from self.send({
 
             "id": 1,
@@ -114,6 +122,9 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def not_authorized(self, channel):
+        logger.debug("Admin in channel %s attempted to use an "
+                     "admin command while not authorized.", channel)
+
         yield from self.send({
 
             "id": 1,
@@ -124,6 +135,8 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def unknown_command(self, channel, command):
+        logger.debug("Received unknown command %s", command)
+
         yield from self.send({
 
             "id": 1,
