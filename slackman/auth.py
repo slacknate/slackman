@@ -19,10 +19,10 @@ def generate_auth_token():
     return secret
 
 
-def send_auth_email(destination, username, password):
+def send_auth_email(auth_token, destination, username, password):
     msg = Message()
     msg.add_header("subject", "Cathedral Admin Access")
-    msg.set_payload(AUTH_EMAIL.format(auth_token=generate_auth_token()))
+    msg.set_payload(AUTH_EMAIL.format(auth_token=auth_token))
 
     server = smtplib.SMTP("smtp.gmail.com:587")
     server.starttls()
