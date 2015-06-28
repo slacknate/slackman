@@ -102,7 +102,6 @@ class SlackServerManager(object):
             "text": "Deauthorization complete."
         })
 
-
     @asyncio.coroutine
     def handle_event(self, event):
         text_groups = [group for group in event["text"].split(" ") if group != ""]
