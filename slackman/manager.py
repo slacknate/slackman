@@ -50,11 +50,8 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def auth_handler(self, event):
-        yield from self.send({
-
-            "channel": event["channel"],
-            "text": "Sending authorization token to your email address. Please send the token as your next message."
-        })
+        yield from self.send(event["channel"], "Sending authorization token to your email address. "
+                                               "Please send the token as your next message.")
 
         email = yield from get_user_email(event["user"], self.args.token)
 
@@ -73,20 +70,12 @@ class SlackServerManager(object):
 
             self.auth_state_table[event["user"]] = True
 
-            yield from self.send({
-
-                "channel": event["channel"],
-                "text": "Authorization succeeded."
-            })
+            yield from self.send(event["channel"], "Authorization succeeded.")
 
         else:
             logger.debug("Authorizing %s failed.", event["user"])
 
-            yield from self.send({
-
-                "channel": event["channel"],
-                "text": "Authorization failed."
-            })
+            yield from self.send(event["channel"], "Authorization failed.")
 
     @asyncio.coroutine
     def deauth_handler(self, event):
@@ -94,42 +83,24 @@ class SlackServerManager(object):
 
         self.auth_state_table[event["user"]] = False
 
-        yield from self.send({
-
-            "channel": event["channel"],
-            "text": "Deauthorization complete."
-        })
+        yield from self.send(event["channel"], "Deauthorization complete.")
 
     @asyncio.coroutine
     def not_permitted(self, channel):
         logger.debug("Non admin in channel %s attempted to use an admin command.", channel)
-
-        yield from self.send({
-
-            "channel": channel,
-            "text": "You are not permitted to use this command."
-        })
+        yield from self.send(channel, "You are not permitted to use this command.")
 
     @asyncio.coroutine
     def not_authorized(self, channel):
         logger.debug("Admin in channel %s attempted to use an "
                      "admin command while not authorized.", channel)
-
-        yield from self.send({
-
-            "channel": channel,
-            "text": "You are not authorized to use this command."
-        })
+        yield from self.send(channel, "You are not authorized to use this command.")
 
     @asyncio.coroutine
     def unknown_command(self, channel, command):
         logger.debug("Received unknown command %s", command)
 
-        yield from self.send({
-
-            "channel": channel,
-            "text": "Unknown command {}".format(command)
-        })
+        yield from self.send(channel, "Unknown command {}".format(command))
 
     @asyncio.coroutine
     def handle_event(self, event):
@@ -179,8 +150,14 @@ class SlackServerManager(object):
             yield from self.unknown_command(event["channel"], command)
 
     @asyncio.coroutine
-    def send(self, event):
-        yield from self.send_connection.send(event.update({"id": 1, "type": "message"}))
+    def send(self, channel, text):
+        yield from self.send_connection.send({
+
+            "id": 1,
+            "type": "message",
+            "channel": channel,
+            "text": text
+        })
 
     @asyncio.coroutine
     def receive_events(self, queue):
