@@ -18,6 +18,7 @@ class SlackServerManager(object):
         self.send_connection = None
         self.admin_uid_table = None
         self.auth_state_table = None
+        self.auth_time_table = None
 
         self.user_commands = []
         self.admin_commands = []
@@ -48,6 +49,14 @@ class SlackServerManager(object):
     def unregister_handler(self, command):
         del self.command_handlers[command]
 
+    def check_auth_time(self, event):
+        if self.auth_time_table.get(event["user"]) is not None:
+            handle = self.auth_time_table[event["user"]]
+            handle.cancel()
+
+            handle = self.loop.call_later(300, asyncio.async, self.auto_deauth_handler(event))
+            self.auth_time_table[event["user"]] = handle
+
     @asyncio.coroutine
     def auth_handler(self, event):
         yield from self.send(event["channel"], "Sending authorization token to your email address. "
@@ -70,7 +79,11 @@ class SlackServerManager(object):
 
             self.auth_state_table[event["user"]] = True
 
-            yield from self.send(event["channel"], "Authorization succeeded.")
+            yield from self.send(event["channel"], "Authorization succeeded. After 5 minutes "
+                                                   "of idle time, you will automatically be deauthorized.")
+
+            handle = self.loop.call_later(300, asyncio.async, self.auto_deauth_handler(event))
+            self.auth_time_table[event["user"]] = handle
 
         else:
             logger.debug("Authorizing %s failed.", event["user"])
@@ -81,9 +94,22 @@ class SlackServerManager(object):
     def deauth_handler(self, event):
         logger.debug("Deauthorizing %s.", event["user"])
 
+        handle = self.auth_time_table[event["user"]]
+        handle.cancel()
+
+        self.auth_time_table[event["user"]] = None
         self.auth_state_table[event["user"]] = False
 
         yield from self.send(event["channel"], "Deauthorization complete.")
+
+    @asyncio.coroutine
+    def auto_deauth_handler(self, event):
+        logger.debug("Automatically deauthorizing %s.", event["user"])
+
+        self.auth_time_table[event["user"]] = None
+        self.auth_state_table[event["user"]] = False
+
+        yield from self.send(event["channel"], "You have been automatically deauthorized.")
 
     @asyncio.coroutine
     def not_permitted(self, channel):
@@ -123,6 +149,8 @@ class SlackServerManager(object):
                 yield from self.not_permitted(event["channel"])
 
         elif command in self.admin_commands:
+            self.check_auth_time(event)
+
             if uid in self.admin_uid_table:
                 if self.auth_state_table[uid]:
                     handler = self.command_handlers.get(command)
@@ -139,6 +167,8 @@ class SlackServerManager(object):
                 yield from self.not_permitted(event["channel"])
 
         elif command in self.user_commands:
+            self.check_auth_time(event)
+
             handler = self.command_handlers.get(command)
             if handler is not None:
                 yield from handler(self, event, *args)
@@ -202,6 +232,7 @@ class SlackServerManager(object):
             self.send_connection = yield from start_slack_rtm_session(self.args.token)
             self.admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
             self.auth_state_table = {uid: False for uid in self.admin_uid_table.keys()}
+            self.auth_time_table = {uid: None for uid in self.admin_uid_table.keys()}
 
             connection = yield from start_slack_rtm_session(self.args.token)
             while True:
