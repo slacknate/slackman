@@ -181,6 +181,9 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def run(self):
+        def put_event(_event):
+            return lambda: asyncio.async(queue.put(_event))
+
         try:
             queue = asyncio.Queue()
 
@@ -194,7 +197,7 @@ class SlackServerManager(object):
             while True:
                 event = yield from connection.recv()
                 if event["type"] == "message":
-                    self.loop.call_soon_threadsafe(lambda: asyncio.async(queue.put(event)))
+                    self.loop.call_soon_threadsafe(put_event(event))
 
         except Exception:
             logger.exception("Error occurred")
