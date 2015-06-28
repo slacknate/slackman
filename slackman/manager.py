@@ -132,7 +132,7 @@ class SlackServerManager(object):
             if uid in self.admin_uid_table:
                 handler = self.command_handlers.get(command)
                 if handler is not None:
-                    yield from handler(self, event, self.args.token, *args)
+                    yield from handler(self, event, *args)
 
                 else:
                     logger.debug("No handler registered for command %s", command)
@@ -149,7 +149,7 @@ class SlackServerManager(object):
         elif command in self.user_commands:
             handler = self.command_handlers.get(command)
             if handler is not None:
-                yield from handler(self, event, self.args.token, *args)
+                yield from handler(self, event, *args)
 
             else:
                 logger.debug("No handler registered for command %s", command)
