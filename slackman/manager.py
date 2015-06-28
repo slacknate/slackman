@@ -80,7 +80,7 @@ class SlackServerManager(object):
             self.auth_state_table[event["user"]] = True
 
             yield from self.send(event["channel"], "Authorization succeeded. After 5 minutes "
-                                                   "of idle time, you will automatically be deauthorized.")
+                                                   "of idle time you will automatically be deauthorized.")
 
             handle = self.loop.call_later(300, asyncio.async, self.auto_deauth_handler(event))
             self.auth_time_table[event["user"]] = handle
