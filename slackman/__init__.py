@@ -1,2 +1,2 @@
 from .args import parse_args
-from .base import SlackServerManager
+from .manager import SlackServerManager
