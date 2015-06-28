@@ -151,10 +151,6 @@ class SlackServerManager(object):
         yield from self.send_connection.send(event)
 
     @asyncio.coroutine
-    def wait_for(self, callback, **kwargs):
-        pass
-
-    @asyncio.coroutine
     def receive_events(self, queue):
         while True:
             try:
