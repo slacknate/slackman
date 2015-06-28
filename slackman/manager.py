@@ -15,12 +15,13 @@ class SlackServerManager(object):
         self.args = args
         self.loop = asyncio.get_event_loop()
 
-        self.admin_uid_table = None
         self.send_connection = None
+        self.admin_uid_table = None
+        self.auth_state_table = None
 
-        self.command_handlers = {}
-        self.admin_commands = []
         self.user_commands = []
+        self.admin_commands = []
+        self.command_handlers = {}
 
         self.router_table = RouterTable()
 
@@ -70,6 +71,8 @@ class SlackServerManager(object):
         response_event = yield from future
 
         if response_event["text"] == auth_token:
+            self.auth_state_table[event["user"]] = True
+
             yield from self.send({
 
                 "id": 1,
@@ -88,6 +91,19 @@ class SlackServerManager(object):
             })
 
     @asyncio.coroutine
+    def deauth_handler(self, event):
+        self.auth_state_table[event["user"]] = False
+
+        yield from self.send({
+
+            "id": 1,
+            "type": "message",
+            "channel": event["channel"],
+            "text": "Deauthorization complete."
+        })
+
+
+    @asyncio.coroutine
     def handle_event(self, event):
         text_groups = [group for group in event["text"].split(" ") if group != ""]
 
@@ -96,9 +112,13 @@ class SlackServerManager(object):
 
         uid = event["user"]
 
-        if command == "$auth":
+        if command in ("$auth", "$deauth"):
             if uid in self.admin_uid_table:
-                yield from self.auth_handler(event)
+                if command == "$auth" and not self.auth_state_table[uid]:
+                    yield from self.auth_handler(event)
+
+                elif command == "$deauth" and self.auth_state_table[uid]:
+                    yield from self.deauth_handler(event)
 
             else:
                 yield from self.send({
@@ -190,8 +210,9 @@ class SlackServerManager(object):
             executor = ThreadPoolExecutor(max_workers=1)
             self.loop.run_in_executor(executor, self.event_thread, queue)
 
-            self.admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
             self.send_connection = yield from start_slack_rtm_session(self.args.token)
+            self.admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
+            self.auth_state_table = {uid: False for uid in self.admin_uid_table.keys()}
 
             connection = yield from start_slack_rtm_session(self.args.token)
             while True:
