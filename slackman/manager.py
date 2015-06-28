@@ -41,7 +41,7 @@ class SlackServerManager(object):
 
     def register_handler(self, command, handler):
         if not asyncio.iscoroutinefunction(handler):
-            raise ValueError("Command handlers must be coroutines.")
+            raise TypeError("Command handlers must be coroutines.")
 
         self.command_handlers[command] = handler
 
