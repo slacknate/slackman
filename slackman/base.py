@@ -16,6 +16,7 @@ class SlackServerManager(object):
         self.loop = asyncio.get_event_loop()
 
         self.admin_uid_table = None
+        self.send_connection = None
 
         self.command_handlers = {}
         self.admin_commands = []
@@ -147,11 +148,7 @@ class SlackServerManager(object):
 
     @asyncio.coroutine
     def send(self, event):
-        # FIXME: this seems spammy and bad...
-        connection = yield from start_slack_rtm_session(self.args.token)
-
-        yield from connection.send(event)
-        yield from connection.close()
+        yield from self.send_connection.send(event)
 
     @asyncio.coroutine
     def wait_for(self, callback, **kwargs):
@@ -195,6 +192,7 @@ class SlackServerManager(object):
             self.loop.run_in_executor(executor, self.event_thread, queue)
 
             self.admin_uid_table = yield from get_user_ids(self.args.admins, self.args.token)
+            self.send_connection = yield from start_slack_rtm_session(self.args.token)
 
             connection = yield from start_slack_rtm_session(self.args.token)
             while True:
@@ -204,3 +202,6 @@ class SlackServerManager(object):
 
         except Exception:
             logger.exception("Error occurred")
+
+        finally:
+            yield from self.send_connection.close()
