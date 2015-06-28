@@ -103,6 +103,36 @@ class SlackServerManager(object):
         })
 
     @asyncio.coroutine
+    def not_permitted(self, channel):
+        yield from self.send({
+
+            "id": 1,
+            "type": "message",
+            "channel": channel,
+            "text": "You are not permitted to use this command."
+        })
+
+    @asyncio.coroutine
+    def not_authorized(self, channel):
+        yield from self.send({
+
+            "id": 1,
+            "type": "message",
+            "channel": channel,
+            "text": "You are not authorized to use this command."
+        })
+
+    @asyncio.coroutine
+    def unknown_command(self, channel, command):
+        yield from self.send({
+
+            "id": 1,
+            "type": "message",
+            "channel": channel,
+            "text": "Unknown command {}".format(command)
+        })
+
+    @asyncio.coroutine
     def handle_event(self, event):
         text_groups = [group for group in event["text"].split(" ") if group != ""]
 
@@ -120,31 +150,23 @@ class SlackServerManager(object):
                     yield from self.deauth_handler(event)
 
             else:
-                yield from self.send({
-
-                    "id": 1,
-                    "type": "message",
-                    "channel": event["channel"],
-                    "text": "You are not authorized to use this command."
-                })
+                yield from self.not_permitted(event["channel"])
 
         elif command in self.admin_commands:
             if uid in self.admin_uid_table:
-                handler = self.command_handlers.get(command)
-                if handler is not None:
-                    yield from handler(self, event, *args)
+                if self.auth_state_table[uid]:
+                    handler = self.command_handlers.get(command)
+                    if handler is not None:
+                        yield from handler(self, event, *args)
+
+                    else:
+                        logger.debug("No handler registered for command %s", command)
 
                 else:
-                    logger.debug("No handler registered for command %s", command)
+                    yield from self.not_authorized(event["channel"])
 
             else:
-                yield from self.send({
-
-                    "id": 1,
-                    "type": "message",
-                    "channel": event["channel"],
-                    "text": "You are not authorized to use this command."
-                })
+                yield from self.not_permitted(event["channel"])
 
         elif command in self.user_commands:
             handler = self.command_handlers.get(command)
@@ -155,15 +177,7 @@ class SlackServerManager(object):
                 logger.debug("No handler registered for command %s", command)
 
         elif command.startswith("$"):
-            logger.debug("Unknown command %s", command)
-
-            yield from self.send({
-
-                "id": 1,
-                "type": "message",
-                "channel": event["channel"],
-                "text": "Unknown command {}".format(command)
-            })
+            yield from self.unknown_command(event["channel"], command)
 
     @asyncio.coroutine
     def send(self, event):
